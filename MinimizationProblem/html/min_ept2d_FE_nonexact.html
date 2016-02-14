@@ -1,0 +1,296 @@
+
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+   <!--
+This HTML was auto-generated from MATLAB code.
+To make changes, update the MATLAB code and republish this document.
+      --><title>min_ept2d_FE_nonexact</title><meta name="generator" content="MATLAB 7.11"><link rel="schema.DC" href="http://purl.org/dc/elements/1.1/"><meta name="DC.date" content="2016-02-14"><meta name="DC.source" content="min_ept2d_FE_nonexact.m"><style type="text/css">
+
+body {
+  background-color: white;
+  margin:10px;
+}
+
+h1 {
+  color: #990000; 
+  font-size: x-large;
+}
+
+h2 {
+  color: #990000;
+  font-size: medium;
+}
+
+/* Make the text shrink to fit narrow windows, but not stretch too far in 
+wide windows. */ 
+p,h1,h2,div.content div {
+  max-width: 600px;
+  /* Hack for IE6 */
+  width: auto !important; width: 600px;
+}
+
+pre.codeinput {
+  background: #EEEEEE;
+  padding: 10px;
+}
+@media print {
+  pre.codeinput {word-wrap:break-word; width:100%;}
+} 
+
+span.keyword {color: #0000FF}
+span.comment {color: #228B22}
+span.string {color: #A020F0}
+span.untermstring {color: #B20000}
+span.syscmd {color: #B28C00}
+
+pre.codeoutput {
+  color: #666666;
+  padding: 10px;
+}
+
+pre.error {
+  color: red;
+}
+
+p.footer {
+  text-align: right;
+  font-size: xx-small;
+  font-weight: lighter;
+  font-style: italic;
+  color: gray;
+}
+
+  </style></head><body><div class="content"><h2>Contents</h2><div><ul><li><a href="#4">Input parameters</a></li><li><a href="#7">Geometry</a></li><li><a href="#8">This loop is to test for different mesh-sizes</a></li><li><a href="#12">Postprocessing</a></li></ul></div><pre class="codeinput"><span class="keyword">function</span> min_gradient_constraint
+</pre><pre class="codeinput"><span class="comment">%{
+</span><span class="comment">Solving elasto-plastic torsion problem (gradient constrained minimization
+</span><span class="comment"> problem) in 2D by using of Semi-smooth Newton method (active set strategy)
+</span><span class="comment">%}</span>
+</pre><pre class="codeinput">clc; clear <span class="string">all</span>;
+</pre><h2>Input parameters<a name="4"></a></h2><p>For the case <img src="min_ept2d_FE_nonexact_eq67349.png" alt="$f=d&gt;0$"> constant ('exact' problem):</p><pre class="codeinput"><span class="keyword">global</span> d;
+</pre><p>alpha - is a damping parameter</p><pre class="codeinput">alpha=0.5;
+</pre><p>tol -   tolerance parameter for the gradient constraint violation <img src="min_ept2d_FE_nonexact_eq08855.png" alt="$\|\max(0, |\nabla y_{\gamma})|^2-1)\|_{2,\Omega}^2$"></p><pre class="codeinput">tol=10^(-4);
+</pre><h2>Geometry<a name="7"></a></h2><pre class="codeinput">load(<span class="string">'geometry_square.mat'</span>),          <span class="comment">% for the unstructured mesh</span>
+<span class="comment">% importfile('Glow_example2'),          % for the unstructured mesh</span>
+<span class="comment">% importfile('Glow_example2_struct'); % structured mesh</span>
+<span class="comment">% [xb,yb]=find(or(coordinates==0,coordinates==1));</span>
+<span class="comment">% J2=[185:189,206,223,240,257:261];</span>
+<span class="comment">% J=[xb;J2']; BoundaryNodes=unique(J);</span>
+</pre><h2>This loop is to test for different mesh-sizes<a name="8"></a></h2><pre class="codeinput"><span class="comment">%h_v=[0.03 0.025 0.02 0.015] %</span>
+h_v=0.03
+constr_m=[];
+<span class="keyword">for</span> h=h_v
+    <span class="comment">% Initialization and refining of the mesh</span>
+    [coordinates,edges,triangles]=initmesh(geom, <span class="string">'Hmax'</span>, h);
+    <span class="comment">%     pdemesh(coordinates, edges, triangles)</span>
+    N=size(coordinates, 2);    <span class="comment">% returns number of nodes in the triangulated mesh</span>
+    N_t = size(triangles,2);   <span class="comment">% returns the number of triangles in the mesh (number of columns)</span>
+    Nodes=1:N;
+    BoundaryNodes=unique(edges(1:2,:));         <span class="comment">%  boundary nodes</span>
+    IntNodes=setdiff(Nodes,BoundaryNodes);      <span class="comment">% internal nodes</span>
+    H1_v=[];
+    <span class="comment">% This loop is to test for different d</span>
+    <span class="keyword">for</span> d=[10]
+</pre><pre class="codeinput">        disp(<span class="string">'Timing begins...'</span>);
+        tic
+        constr_vec=[];
+        [A,~,F]=assema(coordinates,triangles,1,0,f(coordinates,triangles));
+        <span class="comment">% Initialization with zeros</span>
+        u=zeros(N,1); u(IntNodes)=A(IntNodes,IntNodes)\F(IntNodes);
+        constr=L2_grad(u, triangles, coordinates);                          <span class="comment">% computation of the constrain violation term $\|\max(0, |\nabla y|^2-1)\|^2$</span>
+        Grad_u=zeros(2,N_t);
+        [Grad_u(1,:),Grad_u(2,:)]=pdegrad(coordinates,triangles,u);
+        Grad_u2=(Grad_u(1,:).^2+Grad_u(2,:).^2);
+        Chi=(Grad_u2&gt;=1); <span class="comment">% characteristic function for the active set</span>
+        delta_u=zeros(N,1);
+</pre><pre class="codeoutput">Timing begins...
+</pre><p>The outer loop is executed unless <img src="min_ept2d_FE_nonexact_eq16454.png" alt="$\gamma*\|\max(0, |\nabla y|^2-1)\|^2_{2,\Omega}\leq 2*tol$"></p><pre class="codeinput">        iter=1;  <span class="comment">% iterations counter</span>
+        gamma=1; <span class="comment">% continuation parameter (zero corresponds to unconstrained solution initialization)</span>
+        loop_gamma=true;
+        <span class="keyword">while</span> loop_gamma
+            <span class="comment">%             disp(['gamma = ',num2str(gamma,'%6.2e\n')]);</span>
+            loop_Newt=true;
+            iter_Newt=0;    <span class="comment">% counter of Newton iterations</span>
+            <span class="keyword">while</span> loop_Newt
+                iter=iter+1; iter_Newt=iter_Newt+1;
+                [rhs]=assema(coordinates,triangles,-(1+2*gamma*Chi.*(Grad_u2-1)),0,1);   <span class="comment">% assembling of the right hand side matrix</span>
+                c=coefficents(triangles,Grad_u,gamma);
+                [A]=assema(coordinates,triangles,c,0,1);                                   <span class="comment">% assembling of the left hand side matrix</span>
+                b=rhs*u+F;
+                delta_u(IntNodes)= A(IntNodes,IntNodes)\b(IntNodes);
+                u=u+alpha*delta_u;
+                [Grad_u(1,:),Grad_u(2,:)]=pdegrad(coordinates,triangles,u);
+                Grad_u2=(Grad_u(1,:).^2+Grad_u(2,:).^2);
+                Chi_p=Chi; Chi=(Grad_u2&gt;=1);
+                <span class="keyword">if</span> and(iter_Newt&gt;=2, all(Chi==Chi_p))                          <span class="comment">% checking of the stopping criterion</span>
+                    loop_Newt=false;
+                    <span class="comment">%                     disp(['Stop condition for the Newton iterations is satisfied at the Newton step ',num2str(iter_Newt)]);</span>
+                <span class="keyword">end</span>
+                <span class="keyword">if</span> iter_Newt==50                                                <span class="comment">% here we limit the number of Newton iterations</span>
+                    loop_Newt=false;
+                    disp(<span class="string">'Maximal number of Newton iterations has reached, breaking...'</span>);
+                <span class="keyword">end</span>
+            <span class="keyword">end</span>
+            constr=L2_grad(u, triangles, coordinates);                          <span class="comment">% computation of the constrain violation term $\|\max(0, |\nabla y|^2-1)\|^2$</span>
+            disp([num2str(gamma,<span class="string">'%7.1e\n'</span>), <span class="string">' &amp; '</span>, num2str(iter_Newt,<span class="string">'%4.0f'</span>), <span class="string">' &amp; '</span> , num2str(constr,<span class="string">'%8.4e'</span>)]);
+            <span class="keyword">if</span> and(gamma&gt;1, gamma*constr&lt;=2*tol)
+                loop_gamma=false;
+                disp([<span class="string">'Constraint violation is sufficiently small for the given tol.parameter tol='</span>,num2str(tol)])
+            <span class="keyword">end</span>
+            <span class="keyword">if</span> gamma==10^20
+                loop_gamma=false;
+                disp([<span class="string">'Maximal value of gamma has reached. Constraint violation is '</span>,num2str(constr)]);
+                disp(<span class="string">'Breaking...'</span>);
+            <span class="keyword">end</span>
+            gamma=(gamma==0)+(gamma&gt;0)*gamma*10;
+            constr_vec=[constr_vec constr];
+        <span class="keyword">end</span>
+        toc
+        disp([num2str(N,<span class="string">'%04.0f'</span>), <span class="string">' &amp; '</span>, num2str(iter,<span class="string">'%03.0f'</span>), <span class="string">' &amp; '</span>, num2str(constr,<span class="string">'%8.4e\n'</span>)]);
+        constr_m=[constr_m; constr_vec];
+</pre><pre class="codeoutput">1.0e+000 &amp; 19 &amp; 1.5495e+000
+1.0e+001 &amp; 13 &amp; 4.2649e-002
+1.0e+002 &amp; 13 &amp; 5.8737e-004
+1.0e+003 &amp; 12 &amp; 6.3146e-006
+1.0e+004 &amp; 15 &amp; 6.4125e-008
+1.0e+005 &amp; 9 &amp; 6.7034e-010
+Constraint violation is sufficiently small for the given tol.parameter tol=0.0001
+Elapsed time is 33.761969 seconds.
+7690 &amp; 082 &amp; 6.7034e-010
+</pre><pre class="codeinput">    <span class="keyword">end</span>
+<span class="keyword">end</span>
+</pre><pre class="codeoutput">
+h_v =
+
+    0.0300
+
+
+warning: Approximately 8888 triangles will be generated.
+</pre><h2>Postprocessing<a name="12"></a></h2><pre class="codeinput"><span class="keyword">if</span> size(triangles,1)==4
+    triangles(4,:)=[];
+<span class="keyword">end</span>
+x=logspace(1,log10(gamma),log10(gamma));
+figure(1); loglog(x,constr_m,<span class="string">'-s'</span>);title(<span class="string">'Constraint violation versus gamma'</span>)
+show(2,triangles,coordinates,u,[-22 36]); title(<span class="string">'Approximate solution u'</span>)
+<span class="comment">% ShowPC(3, triangles,coordinates,Chi); title('Active and Inactive sets' )</span>
+<span class="comment">% ShowPC(4, triangles,coordinates,sqrt(Grad_u(1,:).^2+Grad_u(2,:).^2)); title('Gradient magnitude' )</span>
+
+<span class="keyword">return</span>
+</pre><img vspace="5" hspace="5" src="min_ept2d_FE_nonexact_01.png" alt=""> <img vspace="5" hspace="5" src="min_ept2d_FE_nonexact_02.png" alt=""> <p class="footer"><br>
+      Published with MATLAB&reg; 7.11<br></p></div><!--
+##### SOURCE BEGIN #####
+%%
+function min_gradient_constraint
+%{
+Solving elasto-plastic torsion problem (gradient constrained minimization
+ problem) in 2D by using of Semi-smooth Newton method (active set strategy)
+%}
+%%
+clc; clear all;
+%% Input parameters
+% For the case $f=d>0$ constant ('exact' problem):
+global d;
+%%
+% alpha - is a damping parameter
+alpha=0.5;
+%%
+% tol -   tolerance parameter for the gradient constraint violation $\|\max(0, |\nabla y_{\gamma})|^2-1)\|_{2,\Omega}^2$
+tol=10^(-4);
+%% Geometry
+load('geometry_square.mat'),          % for the unstructured mesh
+% importfile('Glow_example2'),          % for the unstructured mesh
+% importfile('Glow_example2_struct'); % structured mesh
+% [xb,yb]=find(or(coordinates==0,coordinates==1));
+% J2=[185:189,206,223,240,257:261];
+% J=[xb;J2']; BoundaryNodes=unique(J);
+%% This loop is to test for different mesh-sizes
+%h_v=[0.03 0.025 0.02 0.015] %
+h_v=0.03
+constr_m=[];
+for h=h_v
+    % Initialization and refining of the mesh
+    [coordinates,edges,triangles]=initmesh(geom, 'Hmax', h);
+    %     pdemesh(coordinates, edges, triangles)
+    N=size(coordinates, 2);    % returns number of nodes in the triangulated mesh
+    N_t = size(triangles,2);   % returns the number of triangles in the mesh (number of columns)
+    Nodes=1:N;
+    BoundaryNodes=unique(edges(1:2,:));         %  boundary nodes
+    IntNodes=setdiff(Nodes,BoundaryNodes);      % internal nodes
+    H1_v=[];
+    % This loop is to test for different d
+    for d=[10]
+        disp('Timing begins...');
+        tic
+        constr_vec=[];
+        [A,~,F]=assema(coordinates,triangles,1,0,f(coordinates,triangles));
+        % Initialization with zeros
+        u=zeros(N,1); u(IntNodes)=A(IntNodes,IntNodes)\F(IntNodes);
+        constr=L2_grad(u, triangles, coordinates);                          % computation of the constrain violation term $\|\max(0, |\nabla y|^2-1)\|^2$
+        Grad_u=zeros(2,N_t);
+        [Grad_u(1,:),Grad_u(2,:)]=pdegrad(coordinates,triangles,u);
+        Grad_u2=(Grad_u(1,:).^2+Grad_u(2,:).^2);
+        Chi=(Grad_u2>=1); % characteristic function for the active set
+        delta_u=zeros(N,1);
+        %%
+        % The outer loop is executed unless $\gamma*\|\max(0, |\nabla y|^2-1)\|^2_{2,\Omega}\leq 2*tol$
+        iter=1;  % iterations counter
+        gamma=1; % continuation parameter (zero corresponds to unconstrained solution initialization)
+        loop_gamma=true;
+        while loop_gamma
+            %             disp(['gamma = ',num2str(gamma,'%6.2e\n')]);
+            loop_Newt=true;
+            iter_Newt=0;    % counter of Newton iterations
+            while loop_Newt
+                iter=iter+1; iter_Newt=iter_Newt+1;
+                [rhs]=assema(coordinates,triangles,-(1+2*gamma*Chi.*(Grad_u2-1)),0,1);   % assembling of the right hand side matrix
+                c=coefficents(triangles,Grad_u,gamma);
+                [A]=assema(coordinates,triangles,c,0,1);                                   % assembling of the left hand side matrix
+                b=rhs*u+F;
+                delta_u(IntNodes)= A(IntNodes,IntNodes)\b(IntNodes);
+                u=u+alpha*delta_u;
+                [Grad_u(1,:),Grad_u(2,:)]=pdegrad(coordinates,triangles,u);
+                Grad_u2=(Grad_u(1,:).^2+Grad_u(2,:).^2);
+                Chi_p=Chi; Chi=(Grad_u2>=1);
+                if and(iter_Newt>=2, all(Chi==Chi_p))                          % checking of the stopping criterion
+                    loop_Newt=false;
+                    %                     disp(['Stop condition for the Newton iterations is satisfied at the Newton step ',num2str(iter_Newt)]);
+                end
+                if iter_Newt==50                                                % here we limit the number of Newton iterations
+                    loop_Newt=false;
+                    disp('Maximal number of Newton iterations has reached, breaking...');
+                end
+            end
+            constr=L2_grad(u, triangles, coordinates);                          % computation of the constrain violation term $\|\max(0, |\nabla y|^2-1)\|^2$
+            disp([num2str(gamma,'%7.1e\n'), ' & ', num2str(iter_Newt,'%4.0f'), ' & ' , num2str(constr,'%8.4e')]);
+            if and(gamma>1, gamma*constr<=2*tol)
+                loop_gamma=false;
+                disp(['Constraint violation is sufficiently small for the given tol.parameter tol=',num2str(tol)])
+            end
+            if gamma==10^20
+                loop_gamma=false;
+                disp(['Maximal value of gamma has reached. Constraint violation is ',num2str(constr)]);
+                disp('Breaking...');
+            end
+            gamma=(gamma==0)+(gamma>0)*gamma*10;
+            constr_vec=[constr_vec constr];
+        end
+        toc
+        disp([num2str(N,'%04.0f'), ' & ', num2str(iter,'%03.0f'), ' & ', num2str(constr,'%8.4e\n')]);
+        constr_m=[constr_m; constr_vec];
+    end
+end
+%% Postprocessing
+%
+if size(triangles,1)==4
+    triangles(4,:)=[];
+end
+x=logspace(1,log10(gamma),log10(gamma));
+figure(1); loglog(x,constr_m,'-s');title('Constraint violation versus gamma')
+show(2,triangles,coordinates,u,[-22 36]); title('Approximate solution u')
+% ShowPC(3, triangles,coordinates,Chi); title('Active and Inactive sets' )
+% ShowPC(4, triangles,coordinates,sqrt(Grad_u(1,:).^2+Grad_u(2,:).^2)); title('Gradient magnitude' )
+
+return
+##### SOURCE END #####
+--></body></html>
